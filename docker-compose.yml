@@ -1,0 +1,12 @@
+services:
+  capture:
+    build: .
+    image: binance-lob-capture:latest
+    # Edit the command for your symbols / venue / duration.
+    command: >
+      --venue spot
+      --symbols BTCUSDT
+      --duration 120
+      --output-dir /work/output
+    volumes:
+      - ./output:/work/output

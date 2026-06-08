@@ -1,0 +1,12 @@
+build/
+output/
+*.csv
+*.o
+*.a
+*.so
+.env
+config/secrets.json
+
+# Keep the committed sample run (assignment deliverable)
+!sample/
+!sample/*.csv

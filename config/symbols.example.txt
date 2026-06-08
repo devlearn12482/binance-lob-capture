@@ -1,0 +1,4 @@
+# Example symbol list, uppercase.
+# Current CLI usage: --symbols BTCUSDT,ETHUSDT
+BTCUSDT
+ETHUSDT

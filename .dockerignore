@@ -1,0 +1,4 @@
+build/
+output/
+*.csv
+.git/
