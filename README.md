@@ -136,11 +136,23 @@ Symbol list format:
 
 Docker example:
 
+Linux/macOS:
+
+```bash
+docker build -t binance-lob-capture .
+docker run --rm -v "$PWD/output:/work/output" binance-lob-capture \
+  --venue spot --symbols BTCUSDT --duration 120 --output-dir /work/output
+```
+
+PowerShell:
+
 ```powershell
-mkdir output
+docker build -t binance-lob-capture .
 docker run --rm -v ${PWD}\output:/work/output binance-lob-capture `
   --venue spot --symbols BTCUSDT --duration 120 --output-dir /work/output
 ```
+
+The program creates the output directory if it does not already exist.
 
 Replay with no network:
 

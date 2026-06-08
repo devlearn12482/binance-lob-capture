@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <ctime>
+#include <filesystem>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -236,6 +237,14 @@ int main(int argc, char** argv) {
   }
 
   Metrics metrics;
+
+  try {
+    std::filesystem::create_directories(cfg.output_dir);
+  } catch (const std::exception& e) {
+    std::cerr << "error: cannot create output directory " << cfg.output_dir
+              << ": " << e.what() << "\n";
+    return 2;
+  }
 
   if (!cfg.replay_input.empty()) {
     int rc = run_replay(cfg, metrics);
