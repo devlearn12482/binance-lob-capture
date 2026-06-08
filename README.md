@@ -15,10 +15,11 @@ It writes two assignment deliverables:
 
 Replay mode rebuilds order-book CSVs from saved capture files with no network calls.
 
-## Build
+## Full Build and Run Commands
 
-Tested toolchain:
+Prerequisites:
 
+- OS: Ubuntu 22.04 / Debian
 - Compiler: GCC 12 (`g++-12`)
 - Standard: C++17
 - Build: CMake 3.16+, Ninja or Make
@@ -28,17 +29,26 @@ Tested toolchain:
 - `ENABLE_LIVE=AUTO` is the default: CMake builds the real Beast/OpenSSL client when dependencies are available, or the stub client otherwise. Use `-DENABLE_LIVE=ON` to require live support and `-DENABLE_LIVE=OFF` for core/replay-only sanitizer builds.
 - Portability note: the fixed-point parser uses GCC/Clang `__int128` for overflow-safe scaled integer math; the submitted/tested target is Linux with GCC. MSVC would need an equivalent checked-multiply path.
 
-Ubuntu/Debian dependencies:
+Install dependencies:
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y cmake ninja-build g++-12 libssl-dev libboost-all-dev libsimdjson-dev zlib1g-dev
+sudo apt-get install -y \
+  cmake ninja-build \
+  g++-12 \
+  libssl-dev \
+  libboost-all-dev \
+  libsimdjson-dev \
+  zlib1g-dev
 ```
 
-Reproducible live build:
+Clone and build:
 
 ```bash
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+git clone https://github.com/devlearn12482/binance-lob-capture.git
+cd binance-lob-capture
+cmake -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_COMPILER=g++-12 -DENABLE_LIVE=ON -DENABLE_SIMDJSON=ON
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
@@ -79,7 +89,7 @@ race report.
 
 ## Run
 
-Spot, one symbol, two minutes:
+Live capture, spot, one symbol, two minutes:
 
 ```bash
 ./build/binance_capture --venue spot --symbols BTCUSDT --duration 120 --output-dir ./output
@@ -96,6 +106,27 @@ Multiple symbols:
 ```bash
 ./build/binance_capture --venue spot --symbols BTCUSDT,ETHUSDT --duration 120 --output-dir ./output
 ```
+
+Outputs are written to `./output/`:
+
+```text
+output/
+  market_data_spot_BTCUSDT_<date>.csv
+  market_data_spot_BTCUSDT_<date>_snapshots.csv
+  market_data_spot_BTCUSDT_<date>_orderbook.csv
+```
+
+Verify CSV schema:
+
+```bash
+MARKET=$(ls ./output/market_data_spot_BTCUSDT_20??-??-??.csv | head -1)
+BOOK=$(ls ./output/market_data_spot_BTCUSDT_20??-??-??_orderbook.csv | head -1)
+head -2 "$MARKET"
+head -2 "$BOOK"
+awk -F',' 'NR==2{print NF}' "$BOOK"
+```
+
+Expected order-book column count: `26`.
 
 Symbol list format:
 
@@ -309,6 +340,16 @@ cmake --build build --target unit_tests
 
 Tests cover CSV escaping, decimal scaling, parser behavior, diff semantics, stale/duplicate events, gap handling, USD-M `pu`, resync buffering, sharding, and the SPSC writer ring.
 
+Reviewer checklist:
+
+| Step | Command |
+| --- | --- |
+| Build from clean checkout | `cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++-12 -DENABLE_LIVE=ON && cmake --build build --parallel` |
+| Run tests | `ctest --test-dir build --output-on-failure` |
+| Live 300s capture | `./build/binance_capture --venue spot --symbols BTCUSDT --duration 300 --output-dir ./output` |
+| Column count check | `awk -F',' 'NR==2{print NF}' ./output/*_orderbook.csv` |
+| No secrets in source/config | `git grep -i -E "api_key|secret|password" -- ':!README.md' ':!.gitignore' ':!.env.example'` |
+
 ## Security
 
 - No API keys or credentials are needed.
@@ -321,7 +362,7 @@ Tests cover CSV escaping, decimal scaling, parser behavior, diff semantics, stal
 git init
 git add .
 git commit -m "Initial submission: Binance WebSocket capture + LOB"
-git remote add origin https://github.com/<your-username>/binance-lob-capture.git
+git remote add origin https://github.com/devlearn12482/binance-lob-capture.git
 git branch -M main
 git push -u origin main
 git tag -a v1.0.0 -m "Submission v1.0.0"
