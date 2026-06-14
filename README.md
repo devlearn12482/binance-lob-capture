@@ -17,6 +17,8 @@ Replay mode rebuilds order-book CSVs from saved capture files with no network ca
 
 ## Full Build and Run Commands
 
+The supported reviewer path is a native Ubuntu 22.04/Debian shell using GCC 12 and Ninja.
+
 Prerequisites:
 
 - OS: Ubuntu 22.04 / Debian
@@ -54,12 +56,6 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-Docker build, including tests:
-
-```bash
-docker build -t binance-lob-capture .
-```
-
 Strict warning and sanitizer builds:
 
 ```bash
@@ -82,10 +78,7 @@ cmake --build build-tsan --parallel
 ctest --test-dir build-tsan --output-on-failure
 ```
 
-TSan is best run on native Linux. Some Docker Desktop / WSL combinations fail
-inside the sanitizer runtime before tests start with an "unexpected memory
-mapping" message; that is an environment limitation, not a project-specific
-race report.
+Run TSan on native Ubuntu/Linux.
 
 ## Run
 
@@ -133,24 +126,6 @@ Symbol list format:
 - `--symbols BTCUSDT,ETHUSDT`: comma-separated, uppercase symbols.
 - Repeated symbols are deduplicated.
 - Symbols are lowercased only when building Binance stream URLs.
-
-Docker example:
-
-Linux/macOS:
-
-```bash
-docker build -t binance-lob-capture .
-docker run --rm -v "$PWD/output:/work/output" binance-lob-capture \
-  --venue spot --symbols BTCUSDT --duration 120 --output-dir /work/output
-```
-
-PowerShell:
-
-```powershell
-docker build -t binance-lob-capture .
-docker run --rm -v ${PWD}\output:/work/output binance-lob-capture `
-  --venue spot --symbols BTCUSDT --duration 120 --output-dir /work/output
-```
 
 The program creates the output directory if it does not already exist.
 
