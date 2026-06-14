@@ -10,7 +10,7 @@
 - Use deterministic integer scaling for price and quantity columns; this project
   uses scale `10^8`.
 - Maintain local books from diff updates using Binance sequencing rules and emit
-  rows after applied diffs and depth5 refreshes. Trades are annotation-only when
+  rows after applied diffs and depth5 snapshots (`type=S`). Trades are annotation-only when
   `--integrate-trades` is enabled.
 - Support replay without network calls from captured CSV artifacts.
 
@@ -26,4 +26,4 @@
   `pu` must equal the previous event's `u`.
 - REST snapshot resync buffers incoming diffs, fetches a depth snapshot, drops
   buffered events with `u <= lastUpdateId`, and applies the remaining bridged
-  events in order.
+  events in order, emitting one row for every applied buffered diff.

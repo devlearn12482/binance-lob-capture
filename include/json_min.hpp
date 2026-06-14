@@ -18,6 +18,7 @@ struct DepthEvent {
   bool has_pu = false;
   uint64_t lastUpdateId = 0;   // depth5 partial snapshot
   int64_t event_time_ms = 0;   // Binance E/T event time, 0 when absent
+  Timestamp applied_time{};    // timestamp chosen for this event's OB row
   std::vector<Level> bids;
   std::vector<Level> asks;
 };

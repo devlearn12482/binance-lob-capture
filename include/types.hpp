@@ -29,12 +29,12 @@ inline const char* to_string(StreamKind k) {
 
 // Single ASCII letter recorded in the order-book CSV 'type' column.
 //   D = applied depthUpdate (diff)
-//   5 = depth5 partial-snapshot refresh
+//   S = depth5 partial-snapshot refresh
 //   T = trade annotation (only if trade integration enabled)
 inline char type_letter(StreamKind k) {
   switch (k) {
     case StreamKind::DepthDiff: return 'D';
-    case StreamKind::Depth5:    return '5';
+    case StreamKind::Depth5:    return 'S';
     case StreamKind::Trade:     return 'T';
   }
   return '?';

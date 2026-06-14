@@ -1,9 +1,13 @@
 #pragma once
+#include <cstddef>
 #include <string>
 #include <vector>
 #include "types.hpp"
 
 namespace blob {
+
+inline constexpr size_t kStreamsPerSymbol = 3;
+inline constexpr size_t kMaxCombinedStreams = 1024;
 
 // Time policy for recv timestamps written to both CSVs.
 enum class TimePolicy { RecvWallClock, BinanceEventTime };

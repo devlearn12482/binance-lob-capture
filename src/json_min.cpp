@@ -15,24 +15,27 @@ void reset_depth_event(DepthEvent& ev) {
   ev.has_pu = false;
   ev.lastUpdateId = 0;
   ev.event_time_ms = 0;
+  ev.applied_time = {};
   ev.bids.clear();
   ev.asks.clear();
 }
 
 // ---- parse_scaled (declared in types.hpp) ---------------------------------
 bool parse_scaled(const char* s, size_t len, int scale_pow, int64_t& out) {
-  if (len == 0) return false;
+  if (len == 0 || scale_pow < 0 || scale_pow > 18) return false;
   size_t i = 0;
   bool neg = false;
   if (s[i] == '-') { neg = true; ++i; }
-  int64_t intpart = 0;
+  if (i == len) return false;
+  __int128 intpart = 0;
   bool any = false;
   for (; i < len && s[i] != '.'; ++i) {
     if (s[i] < '0' || s[i] > '9') return false;
     intpart = intpart * 10 + (s[i] - '0');
+    if (intpart > (__int128)INT64_MAX + 1) return false;
     any = true;
   }
-  int64_t frac = 0;
+  __int128 frac = 0;
   int fracdigits = 0;
   if (i < len && s[i] == '.') {
     ++i;
@@ -44,14 +47,19 @@ bool parse_scaled(const char* s, size_t len, int scale_pow, int64_t& out) {
     }
   }
   if (!any) return false;
-  int64_t scale = 1;
+  __int128 scale = 1;
   for (int k = 0; k < scale_pow; ++k) scale *= 10;
-  int64_t fscale = 1;
+  __int128 fscale = 1;
   for (int k = 0; k < fracdigits; ++k) fscale *= 10;
-  __int128 v128 = (__int128)intpart * scale + (fscale ? (__int128)frac * (scale / fscale) : 0);
-  if (v128 > (__int128)INT64_MAX) return false;
-  int64_t val = (int64_t)v128;
-  out = neg ? -val : val;
+  const __int128 magnitude = intpart * scale + frac * (scale / fscale);
+  const __int128 limit = neg ? (__int128)INT64_MAX + 1 : (__int128)INT64_MAX;
+  if (magnitude > limit) return false;
+  if (neg && magnitude == (__int128)INT64_MAX + 1) {
+    out = INT64_MIN;
+  } else {
+    const int64_t val = (int64_t)magnitude;
+    out = neg ? -val : val;
+  }
   return true;
 }
 

@@ -96,14 +96,25 @@ static int run_shard(const Config& cfg, int shard_id,
     sym.emplace(s, std::move(st));
   }
 
-  auto resync = [&](SymState& st, const std::string& symbol) -> bool {
+  auto resync = [&](SymState& st, const std::string& symbol) {
     DepthEvent snap; std::string serr, raw;
     int limit = (cfg.venue == Venue::Spot) ? 5000 : 1000;
     if (!fetch_depth_snapshot(cfg.venue, symbol, limit, snap, serr, &raw)) {
       std::fprintf(stderr, "[resync] %s snapshot failed: %s\n", symbol.c_str(), serr.c_str());
-      return false;
+      return;
     }
-    st.sess->on_snapshot(snap.bids, snap.asks, snap.lastUpdateId);
+    st.sess->on_snapshot(
+        snap.bids, snap.asks, snap.lastUpdateId,
+        [&](const DepthEvent& ev, const OrderBook& book) {
+          ObRow row;
+          row.ts = ev.applied_time;
+          row.seqNo = ++st.ob_seq;
+          row.type = 'D';
+          row.side = 'N';
+          book.fill_top5(row);
+          st.ob_writer->write_row(row);
+          metrics.ob_rows_written++;
+        });
     metrics.resyncs++;
     Timestamp t = now_ts();
     char pre[96];
@@ -113,7 +124,6 @@ static int run_shard(const Config& cfg, int shard_id,
     row += std::to_string((unsigned long long)snap.lastUpdateId); row += ',';
     csv_escape_append(row, raw.data(), raw.size()); row += '\n';
     snaps.write(row.data(), row.size());
-    return st.sess->book().initialized() && !st.sess->resync_pending();
   };
 
   std::string stream;
@@ -150,6 +160,7 @@ static int run_shard(const Config& cfg, int shard_id,
       } else if (cfg.time_policy == TimePolicy::BinanceEventTime && parsed_depth->event_time_ms > 0) {
         ts = ms_to_ts(parsed_depth->event_time_ms);
       }
+      parsed_depth->applied_time = ts;
     } else if (cfg.time_policy == TimePolicy::BinanceEventTime) {
       int64_t et = event_time_ms(data);  // Trades are not depth-parsed.
       if (et > 0) ts = ms_to_ts(et);
@@ -177,13 +188,13 @@ static int run_shard(const Config& cfg, int shard_id,
       else if (o == BookSession::Outcome::ResyncNeeded ||
                (o == BookSession::Outcome::Buffered && st.sess->resync_pending())) {
         if (o == BookSession::Outcome::ResyncNeeded) metrics.gaps_detected++;
-        if (resync(st, sym_str)) { emit = true; type = 'D'; }
+        resync(st, sym_str);
       }
     } else if (kind == StreamKind::Depth5) {
       metrics.msgs_depth5++;
       DepthEvent& ev = *parsed_depth;
       // depth5 is the exchange's authoritative top-5 partial snapshot. It uses
-      // REPLACE semantics: emit a 'type=5' row built directly from the snapshot
+      // REPLACE semantics: emit a 'type=S' row built directly from the snapshot
       // (no stale levels even when the price band moves). Also cross-check it
       // against the diff-maintained book for observability.
       if (st.sess->initialized()) {
@@ -193,7 +204,7 @@ static int run_shard(const Config& cfg, int shard_id,
       // NOTE: we do NOT feed depth5 into the diff book — the diff stream is the
       // sole, complete source of book state. depth5 is emitted as its own row.
       ObRow row; row.ts = ts; row.seqNo = ++st.ob_seq; row.id = st.sess->book().id();
-      row.type = '5'; row.side = 'N';
+      row.type = 'S'; row.side = 'N';
       for (size_t i = 0; i < ev.bids.size() && i < 5; ++i) { row.bid[i] = ev.bids[i].price; row.bid_size[i] = ev.bids[i].qty; }
       for (size_t i = 0; i < ev.asks.size() && i < 5; ++i) { row.ask[i] = ev.asks[i].price; row.ask_size[i] = ev.asks[i].qty; }
       st.ob_writer->write_row(row); metrics.ob_rows_written++;

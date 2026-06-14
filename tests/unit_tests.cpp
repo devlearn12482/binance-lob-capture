@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 using namespace blob;
 static int failures = 0;
@@ -19,6 +20,10 @@ static void test_parse_scaled() {
   CHECK(parse_scaled(std::string("100"), 8, v) && v == 10000000000LL);
   CHECK(parse_scaled(std::string("12345.67890000"), 8, v) && v == 1234567890000LL);
   CHECK(!parse_scaled(std::string("abc"), 8, v));
+  CHECK(parse_scaled(std::string("-92233720368.54775808"), 8, v) &&
+        v == INT64_MIN);
+  CHECK(!parse_scaled(std::string("92233720368.54775808"), 8, v));
+  CHECK(!parse_scaled(std::string("999999999999999999999999999"), 8, v));
 }
 
 static void test_csv_escape() {
@@ -97,6 +102,36 @@ static void test_session_resync_buffer() {
   CHECK(s.resync_pending());
 }
 
+static void test_session_resync_emits_each_applied_event() {
+  BookSession s(3, Venue::Spot);
+  DepthEvent a = mk(100, 105, 0, false);
+  a.applied_time = Timestamp{1, 100};
+  a.bids = {{100, 2}};
+  DepthEvent b = mk(106, 110, 0, false);
+  b.applied_time = Timestamp{2, 200};
+  b.bids = {{100, 3}};
+  s.on_diff(a);
+  s.on_diff(b);
+
+  std::vector<uint64_t> ids;
+  std::vector<int64_t> sizes;
+  std::vector<Timestamp> times;
+  const size_t applied = s.on_snapshot(
+      {{100, 1}}, {{101, 1}}, 99,
+      [&](const DepthEvent& ev, const OrderBook& book) {
+        ObRow row;
+        book.fill_top5(row);
+        ids.push_back(book.last_update_id());
+        sizes.push_back(row.bid_size[0]);
+        times.push_back(ev.applied_time);
+      });
+
+  CHECK(applied == 2);
+  CHECK(ids.size() == 2 && ids[0] == 105 && ids[1] == 110);
+  CHECK(sizes.size() == 2 && sizes[0] == 2 && sizes[1] == 3);
+  CHECK(times.size() == 2 && times[0].tsec == 1 && times[1].tsec == 2);
+}
+
 static void test_session_usdm_gap() {
   BookSession s(2, Venue::Usdm);
   s.on_snapshot({{100,1}},{{101,1}}, 50);
@@ -148,6 +183,29 @@ static void test_shard_partition() {
   // single shard keeps order
   auto g3 = shard_symbols({"A","B","C"}, 1);
   CHECK(g3.size() == 1 && g3[0].size() == 3);
+}
+
+static void test_combined_stream_limit() {
+  std::string symbols;
+  for (int i = 0; i < 342; ++i) {
+    if (i) symbols += ',';
+    symbols += "S" + std::to_string(i);
+  }
+  std::vector<std::string> args = {
+      "binance_capture", "--symbols", symbols, "--shards", "1"};
+  std::vector<char*> argv;
+  for (auto& arg : args) argv.push_back(arg.data());
+  std::string err;
+  Config cfg = Config::from_args((int)argv.size(), argv.data(), err);
+  (void)cfg;
+  CHECK(!err.empty());
+
+  args[4] = "2";
+  argv.clear();
+  for (auto& arg : args) argv.push_back(arg.data());
+  err.clear();
+  Config::from_args((int)argv.size(), argv.data(), err);
+  CHECK(err.empty());
 }
 
 
@@ -271,6 +329,7 @@ static void test_classify_stream() {
   CHECK(classify_stream("btcusdt@depth@100ms")  == StreamKind::DepthDiff);
   CHECK(classify_stream("btcusdt@trade")        == StreamKind::Trade);
   CHECK(classify_stream("ethusdt@depth5")       == StreamKind::Depth5);  // depth5 before depth
+  CHECK(type_letter(StreamKind::Depth5) == 'S');
 }
 
 int main() {
@@ -280,11 +339,13 @@ int main() {
   test_orderbook_diff_semantics();
   test_usdm_continuity();
   test_session_resync_buffer();
+  test_session_resync_emits_each_applied_event();
   test_session_usdm_gap();
   test_usdm_first_event_gap();
   test_session_failclosed_on_gap();
   test_multi_level_parse();
   test_shard_partition();
+  test_combined_stream_limit();
   test_spsc_ring_single_thread();
   test_spsc_ring_full();
   test_duplicate_ignored();

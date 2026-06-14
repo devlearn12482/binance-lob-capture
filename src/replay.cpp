@@ -73,13 +73,30 @@ int run_replay(const Config& cfg, Metrics& m) {
   std::map<std::string, uint64_t>        epochs;  // last conn_epoch per symbol
   std::map<std::string, DepthEvent>      scratch;
 
+  auto emit_replayed_diff = [&](const std::string& symbol,
+                                const DepthEvent& ev,
+                                const OrderBook& book) {
+    ObRow row;
+    row.ts = ev.applied_time;
+    row.seqNo = ++seqs[symbol];
+    row.type = 'D';
+    row.side = 'N';
+    book.fill_top5(row);
+    writers.at(symbol)->write_row(row);
+    m.ob_rows_written++;
+  };
+
   // Seed a session from the next recorded REST snapshot; false if none left.
   auto seed_from_sidecar = [&](const std::string& symbol, BookSession& ob) -> bool {
     auto it = snaps.find(symbol);
     if (it == snaps.end() || it->second.empty()) return false;
     DepthEvent sn = it->second.front();
     it->second.pop_front();
-    ob.on_snapshot(sn.bids, sn.asks, sn.lastUpdateId);
+    ob.on_snapshot(
+        sn.bids, sn.asks, sn.lastUpdateId,
+        [&](const DepthEvent& ev, const OrderBook& book) {
+          emit_replayed_diff(symbol, ev, book);
+        });
     m.resyncs++;
     return ob.initialized() && !ob.resync_pending();
   };
@@ -124,6 +141,7 @@ int run_replay(const Config& cfg, Metrics& m) {
       DepthEvent& ev = scratch.at(symbol);
       reset_depth_event(ev);
       if (!parse_depth(payload, ev)) { m.parse_errors++; continue; }
+      ev.applied_time = ts;
       auto o = ob.on_diff(ev);
       if (o == BookSession::Outcome::Applied) { emit = true; type = 'D'; }
       else if (o == BookSession::Outcome::ResyncNeeded ||
@@ -132,26 +150,31 @@ int run_replay(const Config& cfg, Metrics& m) {
         // Prefer a recorded REST snapshot (faithful to live). Without the
         // sidecar, keep buffering until the next depth5 checkpoint in the
         // market-data CSV seeds the replay book.
-        if (seed_from_sidecar(symbol, ob)) { emit = true; type = 'D'; }
+        seed_from_sidecar(symbol, ob);
       }
     } else if (kind == "depth5") {
       m.msgs_depth5++;
       DepthEvent& ev = scratch.at(symbol);
       reset_depth_event(ev);
       if (!parse_depth(payload, ev)) { m.parse_errors++; continue; }
+      ev.applied_time = ts;
       if (ob.initialized()) {
         ObRow chk; ob.book().fill_top5(chk);
         if (!ev.bids.empty() && chk.bid[0] != ev.bids[0].price) m.depth5_mismatch++;
       }
       if (!have_sidecar) {
-        ob.on_snapshot(ev.bids, ev.asks, ev.lastUpdateId);
+        ob.on_snapshot(
+            ev.bids, ev.asks, ev.lastUpdateId,
+            [&](const DepthEvent& applied, const OrderBook& book) {
+              emit_replayed_diff(symbol, applied, book);
+            });
       }
       // depth5 replace semantics: emit the partial snapshot directly. With a
       // REST snapshot sidecar, the diff book is anchored by those snapshots.
       // Without that sidecar, replay uses depth5 as the deterministic checkpoint
       // available in the market-data CSV itself.
       ObRow row; row.ts = ts; row.seqNo = ++seqs[symbol]; row.id = ob.book().id();
-      row.type = '5'; row.side = 'N';
+      row.type = 'S'; row.side = 'N';
       for (size_t i = 0; i < ev.bids.size() && i < 5; ++i) { row.bid[i] = ev.bids[i].price; row.bid_size[i] = ev.bids[i].qty; }
       for (size_t i = 0; i < ev.asks.size() && i < 5; ++i) { row.ask[i] = ev.asks[i].price; row.ask_size[i] = ev.asks[i].qty; }
       writers.at(symbol)->write_row(row);

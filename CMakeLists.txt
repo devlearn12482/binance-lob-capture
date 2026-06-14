@@ -72,10 +72,18 @@ endif()
 
 if(ENABLE_SIMDJSON)
   find_package(simdjson CONFIG QUIET)
-  if(simdjson_FOUND)
+  if(TARGET simdjson::simdjson)
     target_link_libraries(lob_core PUBLIC simdjson::simdjson)
   else()
-    target_link_libraries(lob_core PUBLIC simdjson)  # plain -lsimdjson
+    find_path(SIMDJSON_INCLUDE_DIR simdjson.h)
+    find_library(SIMDJSON_LIBRARY NAMES simdjson)
+    if(NOT SIMDJSON_INCLUDE_DIR OR NOT SIMDJSON_LIBRARY)
+      message(FATAL_ERROR
+        "ENABLE_SIMDJSON=ON requires simdjson headers and library "
+        "(Ubuntu/Debian: apt-get install libsimdjson-dev)")
+    endif()
+    target_include_directories(lob_core PUBLIC ${SIMDJSON_INCLUDE_DIR})
+    target_link_libraries(lob_core PUBLIC ${SIMDJSON_LIBRARY})
   endif()
   target_compile_definitions(lob_core PUBLIC USE_SIMDJSON=1)
 endif()

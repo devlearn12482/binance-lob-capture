@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <deque>
+#include <functional>
 #include <vector>
 #include "json_min.hpp"
 #include "order_book.hpp"
@@ -17,6 +18,8 @@ namespace blob {
 // unit-testable and usable in replay without sockets).
 class BookSession {
 public:
+  using AppliedCallback = std::function<void(const DepthEvent&, const OrderBook&)>;
+
   BookSession(int32_t id, Venue venue) : ob_(id), venue_(venue) {}
 
   enum class Outcome { Buffered, Applied, ResyncNeeded, Dropped };
@@ -32,11 +35,13 @@ public:
   Outcome on_diff(const DepthEvent& ev);
 
   // Apply the REST/partial snapshot (absolute levels + its lastUpdateId), then
-  // replay buffered events per the algorithm. Returns number of buffered events
-  // applied.
+  // replay buffered events per the algorithm. `on_applied` runs immediately
+  // after each successfully applied buffered diff, while the book reflects
+  // exactly that event's state. Returns the number of buffered events applied.
   size_t on_snapshot(const std::vector<Level>& bids,
                      const std::vector<Level>& asks,
-                     uint64_t snapshot_last_update_id);
+                     uint64_t snapshot_last_update_id,
+                     const AppliedCallback& on_applied = {});
 
   // Mark that a resync is required (e.g. on reconnect/new epoch).
   void request_resync() { resync_pending_ = true; ob_.reset(); buffer_.clear(); }

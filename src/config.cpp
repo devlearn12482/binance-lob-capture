@@ -62,6 +62,16 @@ Config Config::from_args(int argc, char** argv, std::string& err) {
     c.symbols.swap(uniq);
   }
   if (c.replay_input.empty() && c.symbols.empty()) err = "at least one --symbols required (or use --replay)";
+  if (err.empty() && c.replay_input.empty()) {
+    const size_t shard_count = std::min(c.symbols.size(), (size_t)c.shards);
+    const size_t max_symbols_per_shard =
+        (c.symbols.size() + shard_count - 1) / shard_count;
+    if (max_symbols_per_shard * kStreamsPerSymbol > kMaxCombinedStreams) {
+      err = "too many symbols per shard: Binance permits at most " +
+            std::to_string(kMaxCombinedStreams) +
+            " combined streams per connection; increase --shards";
+    }
+  }
   return c;
 }
 

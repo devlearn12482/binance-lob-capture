@@ -207,7 +207,7 @@ Sample summary:
 
 - Market-data rows: 4,079
 - REST snapshot sidecar rows: 1
-- Order-book rows: 1,189
+- Order-book rows: 1,188
 - Crossed order-book rows: 0
 - Replay reproduces the committed order-book file from the sample inputs.
 
@@ -247,7 +247,7 @@ Timestamps:
 Order-book row markers:
 
 - `type=D`: applied differential depth update.
-- `type=5`: depth5 checkpoint row.
+- `type=S`: depth5 snapshot row.
 - `type=T`: trade annotation row, only with `--integrate-trades`.
 - `side=N`: full two-sided top-5 snapshot.
 
@@ -269,7 +269,7 @@ Depth updates:
 Depth5:
 
 - Treated as exchange top-5 replace snapshots.
-- Emits `type=5` order-book rows.
+- Emits `type=S` order-book rows.
 - Cross-checked against the diff-maintained book with a `depth5_mismatch` counter.
 
 Trades:
@@ -293,6 +293,9 @@ Resync:
   - USD-M: `fapi.binance.com/fapi/v1/depth?limit=1000`
 - Incoming diffs are buffered while waiting for the snapshot.
 - Buffered diffs with `u <= lastUpdateId` are dropped, then remaining bridged diffs are applied.
+- Every buffered diff applied during snapshot bridging emits its own `type=D`
+  row at that diff's original selected timestamp; resync never collapses
+  multiple applied events into one output row.
 - If the REST call fails, the book stays not-ready and retries on later events.
 - Replay uses saved `*_snapshots.csv` sidecars when present; without a sidecar, it uses depth5 rows as deterministic top-5 checkpoints.
 
@@ -342,6 +345,12 @@ Threading:
 Metrics:
 
 - Counters printed on exit include messages by kind, parse errors, gaps, reconnects, resyncs, rows written, depth5 mismatches, and buffer overflows.
+
+Limits:
+
+- Each symbol consumes three combined streams. Configuration is rejected when
+  any shard would exceed Binance's 1,024-stream per-connection limit; increase
+  `--shards` to spread a larger symbol set across connections.
 
 ## Tests
 

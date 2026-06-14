@@ -44,7 +44,8 @@ BookSession::Outcome BookSession::on_diff(const DepthEvent& ev) {
 
 size_t BookSession::on_snapshot(const std::vector<Level>& bids,
                                 const std::vector<Level>& asks,
-                                uint64_t snapshot_last_update_id) {
+                                uint64_t snapshot_last_update_id,
+                                const AppliedCallback& on_applied) {
   ob_.set_snapshot(bids, asks, snapshot_last_update_id);
   resync_pending_ = false;
   size_t applied = 0;
@@ -58,7 +59,10 @@ size_t BookSession::on_snapshot(const std::vector<Level>& bids,
     if (ev.u <= snapshot_last_update_id) { buffer_.pop_front(); continue; }  // stale
     Outcome o = apply_one(ev);
     if (o == Outcome::ResyncNeeded) break;             // gap -> preserve suffix
-    if (o == Outcome::Applied) ++applied;
+    if (o == Outcome::Applied) {
+      ++applied;
+      if (on_applied) on_applied(ev, ob_);
+    }
     buffer_.pop_front();                                // applied or dropped
   }
   return applied;
