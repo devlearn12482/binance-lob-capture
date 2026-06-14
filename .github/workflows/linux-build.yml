@@ -1,0 +1,63 @@
+name: Linux build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }} / GCC 12
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-22.04
+          - ubuntu-24.04
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build \
+            g++-12 \
+            libssl-dev \
+            libboost-all-dev \
+            libsimdjson-dev \
+            zlib1g-dev
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_COMPILER=g++-12 \
+            -DENABLE_LIVE=ON \
+            -DENABLE_SIMDJSON=ON \
+            -DENABLE_WERROR=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Run replay and validate output
+        shell: bash
+        run: |
+          rm -rf ci-output
+          ./build/binance_capture \
+            --venue spot \
+            --symbols BTCUSDT \
+            --replay sample/market_data_spot_BTCUSDT_sample.csv \
+            --output-dir ci-output
+
+          book_file=$(find ci-output -maxdepth 1 -type f -name '*_orderbook.csv' -print -quit)
+          test -n "$book_file"
+          test "$(awk -F',' 'NR == 2 { print NF; exit }' "$book_file")" = "26"
+          test "$(wc -l < "$book_file")" -gt 1
